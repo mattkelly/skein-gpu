@@ -16,47 +16,20 @@
  **
  ***********************************************************************/
 
-#include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <time.h>
-#include <assert.h>
+#include "SkeinTest.h"
 
-#include "skein.h"
-#include "SHA3api_ref.h"
+static uint_t _quiet_ = 0;  /* quiet processing? */
+static uint_t verbose = 0;  /* verbose flag bits */
 
-static const uint_t HASH_BITS[] =    /* list of hash hash lengths to test */
-{ 160,224,256,384,512,1024, 256+8,512+8,1024+8,2048+8 };
-
-#define HASH_BITS_CNT   (sizeof(HASH_BITS)/sizeof(HASH_BITS[0]))
-
-/* bits of the verbose flag word */
-#define V_KAT_LONG      (1u << 0)
-#define V_KAT_SHORT     (1u << 1)
-#define V_KAT_NO_TREE   (1u << 2)
-#define V_KAT_NO_SEQ    (1u << 3)
-#define V_KAT_NO_3FISH  (1u << 4)
-#define V_KAT_DO_3FISH  (1u << 5)
-
-/* External function to process blkCnt (nonzero) full block(s) of data. */
-void Skein_512_Process_Block(Skein_512_Ctxt_t *ctx, const u08b_t *blkPtr, size_t blkCnt, size_t byteCntAdd);
-
-/********************** debug i/o helper routines **********************/
-
-/* print out a msg and exit with an error code */
-void FatalError(const char *s,...) { 
+ /* print out a msg and exit with an error code */
+void FatalError(const char *s, ...) { 
 	va_list ap;
 	va_start(ap,s);
 	vprintf(s,ap);
 	va_end(ap);
 	printf("\n");
 	exit(2);
-} // FatalError
-
-static uint_t _quiet_   =   0;  /* quiet processing? */
-static uint_t verbose   =   0;  /* verbose flag bits */
+}
 
 /* formatted output of byte array */
 void ShowBytes(uint_t cnt,const u08b_t *b) {
@@ -67,94 +40,16 @@ void ShowBytes(uint_t cnt,const u08b_t *b) {
 		printf(" %02X",b[i]);
 		if (i %16 == 15 || i==cnt-1) printf("\n");
 	}
-} // ShowBytes
+}
 
-#ifndef SKEIN_DEBUG
-uint_t skein_DebugFlag     =   0;     /* dummy flags (if not defined elsewhere) */
-#endif
-
-#define SKEIN_DEBUG_SHORT   (SKEIN_DEBUG_HDR | SKEIN_DEBUG_STATE | SKEIN_DEBUG_TWEAK | SKEIN_DEBUG_KEY | SKEIN_DEBUG_INPUT_08 | SKEIN_DEBUG_FINAL)
-#define SKEIN_DEBUG_DEFAULT (SKEIN_DEBUG_SHORT)
-
-void Show_Debug(const char *s,...) {
-	/* are we showing debug info? */
+void Show_Debug(const char *s, ...) {
 	if (skein_DebugFlag) {
 		va_list ap;
 		va_start(ap,s);
 		vprintf(s,ap);
 		va_end(ap);
 	}
-} // Show_Debug
-
-/********************** use RC4 to generate test data ******************/
-/* Note: this works identically on all platforms (big/little-endian)   */
-static struct {
-	uint_t I,J;                         /* RC4 vars */
-	u08b_t state[256];
-} prng;
-
-void RandBytes(void *dst,uint_t byteCnt) {
-	u08b_t a,b;
-	u08b_t *d = (u08b_t *) dst;
-	/* run RC4  */
-	for (;byteCnt;byteCnt--,d++) {
-		prng.I  = (prng.I+1) & 0xFF;
-		a       =  prng.state[prng.I];
-		prng.J  = (prng.J+a) & 0xFF;
-		b       =  prng.state[prng.J];
-		prng.state[prng.I] = b;
-		prng.state[prng.J] = a;
-		*d      =  prng.state[(a+b) & 0xFF];
-	}
-} // RandBytes
-
-/* get a pseudo-random 32-bit integer in a portable way */
-uint_t Rand32(void) {
-	uint_t i,n;
-	u08b_t tmp[4];
-
-	RandBytes(tmp,sizeof(tmp));
-
-	for (i=n=0;i<sizeof(tmp);i++)
-		n = n*256 + tmp[i];
-
-	return n;
-} // Rand32
-
-/* init the (RC4-based) prng */
-void Rand_Init(u64b_t seed) {
-	uint_t i,j;
-	u08b_t tmp[512];
-
-	/* init the "key" in an endian-independent fashion */
-	for (i=0;i<8;i++)
-		tmp[i] = (u08b_t) (seed >> (8*i));
-
-	/* initialize the permutation */
-	for (i=0;i<256;i++)
-		prng.state[i]=(u08b_t) i;
-
-	/* now run the RC4 key schedule */
-	for (i=j=0;i<256;i++)
-	{                   
-		j = (j + prng.state[i] + tmp[i%8]) & 0xFF;
-		tmp[256]      = prng.state[i];
-		prng.state[i] = prng.state[j];
-		prng.state[j] = tmp[256];
-	}
-	prng.I = prng.J = 0;  /* init I,J variables for RC4 */
-
-	/* discard initial keystream before returning */
-	RandBytes(tmp,sizeof(tmp));
-} // Rand_Init
-
-
-/***********************************************************************/
-/* An AHS-like API that allows explicit setting of block size          */
-/*    [i.e., the AHS API selects a block size based solely on the ]    */
-/*    [hash result length, while Skein allows independent hash    ]    */
-/*    [result size and block size                                 ]    */
-/***********************************************************************/
+}
 
 /* process data to be hashed */
 int Skein_Update(hashState *state, const BitSequence *data, DataLength databitlen) {
@@ -193,103 +88,21 @@ uint_t Short_KAT_OK(uint_t blkSize,uint_t hashBits) {
 	return 1;
 } // Short_KAT_OK
 
-#define MAX_TREE_MSG_LEN  (1 << 12)
-
-/* generate a KAT test for the given data and tree parameters. */
-/* This is an "all-in-one" call. It is not intended to represent */
-/* how a real multi-processor version would be implemented, but  */
-/* the results will be the same */
-void Skein_TreeHash
-	(uint_t blkSize,uint_t hashBits,const u08b_t *msg,size_t msgBytes,
-	uint_t leaf   ,uint_t node    ,uint_t maxLevel  ,u08b_t *hashRes) {
-
-	enum      { MAX_HEIGHT = 32 };          /* how deep we can go here */
-	uint_t    height;
-	uint_t    blkBytes  = blkSize/8;
-	uint_t    saveDebug = skein_DebugFlag;
-	size_t    n,nodeLen,srcOffs,dstOffs,bCnt;
-	u64b_t    treeInfo;
-	u08b_t    M[MAX_TREE_MSG_LEN+4];
-	hashState G,s;
-
-	assert(node < 256 && leaf < 256 && maxLevel < 256);
-	assert(node >  0  && leaf >  0  && maxLevel >  1 );
-	assert(blkSize == 256 || blkSize == 512 || blkSize == 1024);
-	assert(blkBytes <= sizeof(M));
-	assert(msgBytes <= sizeof(M));
-
-	/* precompute the config block result G for multiple uses below */
-#ifdef SKEIN_DEBUG
-	if (skein_DebugFlag)
-		skein_DebugFlag |= SKEIN_DEBUG_CONFIG;
-#endif
-	treeInfo = SKEIN_CFG_TREE_INFO(leaf,node,maxLevel);
-	if (Skein_512_InitExt(&G.u.ctx_512,(size_t) hashBits,treeInfo,NULL,0) != SKEIN_SUCCESS )
-		FatalError("Skein_512_InitExt() fails in tree");
-	skein_DebugFlag = saveDebug;
-
-	bCnt = msgBytes;
-	memcpy(M,msg,bCnt);
-
-	/* walk up the tree */
-	for (height=0;;height++) {
-
-		/* are we done (with only one block left)? */
-		if (height && (bCnt==blkBytes))
-			break;
-
-		/* is this the final allowed level? */
-		if (height+1 == maxLevel) {
-			/* if so, do it as one big hash */
-			s = G;
-			Skein_Set_Tree_Level(s.u.h,height+1);
-			Skein_Update   (&s,M,bCnt*8);
-			Skein_512_Final_Pad(&s.u.ctx_512,M);
-			break;
-		}
-
-		nodeLen = blkBytes << ((height) ? node : leaf);
-		for (srcOffs=dstOffs=0;srcOffs <= bCnt;) {
-			n = bCnt - srcOffs;         /* number of bytes left at this level */
-			if (n > nodeLen)            /* limit to node size */
-				n = nodeLen;
-			s = G;
-			s.u.h.T[0] = srcOffs;       /* nonzero initial offset in tweak! */
-			Skein_Set_Tree_Level(s.u.h,height+1);
-			Skein_Update   (&s,M+srcOffs,n*8);
-			Skein_512_Final_Pad(&s.u.ctx_512,M+dstOffs);  /* finish up this node, output intermediate result to M[]*/
-			dstOffs+=blkBytes;
-			srcOffs+=n;
-			if (srcOffs >= bCnt)        /* special logic to handle (msgBytes == 0) case */
-				break;
-		}
-		bCnt = dstOffs;
-
-	} // walk tree
-
-	/* output the result */
-	Skein_512_Output(&s.u.ctx_512, hashRes);
-
-} // Skein_TreeHash
-
 /*
-** Generate tree-mode hash KAT vectors.
-** Note:
-**    Tree vectors are different enough from non-tree vectors that it 
-**    makes sense to separate this out into a different function, rather 
-**    than shoehorn it into the same KAT logic as the other modes.
-**/
+ * Generate tree-mode hash KAT vectors.
+ */
 void Skein_GenKAT_Tree(uint_t blkSize) {
 
 	static const struct {
-		uint_t leaf,node,maxLevel,levels;
+		uint_t leaf, node, maxLevel, levels;
 	}
 
 	TREE_PARMS[] = { {2,2,2,2}, {1,2,3,2}, {2,1,0xFF,3} };
 #define TREE_PARM_CNT (sizeof(TREE_PARMS)/sizeof(TREE_PARMS[0]))
 
-	u08b_t  msg[MAX_TREE_MSG_LEN+4],hashVal[MAX_TREE_MSG_LEN+4];
-	uint_t  i,j,k,n,p,q,hashBits,node,leaf,leafBytes,msgBytes,byteCnt,levels,maxLevel;
+	u08b_t msg[MAX_TREE_MSG_LEN+4], hashVal[MAX_TREE_MSG_LEN+4];
+	uint_t i, j ,k, n, p, q;
+	uint_t hashBits, node, leaf, leafBytes, msgBytes, byteCnt, levels, maxLevel;
 
 	assert(blkSize == 256 || blkSize == 512 || blkSize == 1024);
 	for (i=0;i<MAX_TREE_MSG_LEN;i+=2) {   
@@ -298,7 +111,7 @@ void Skein_GenKAT_Tree(uint_t blkSize) {
 		msg[i+1] = (u08b_t) ((i ^ blkSize) >> 8);
 	}
 
-	for (k=q=n=0;k < HASH_BITS_CNT;k++) {
+	for (k=q=n=0; k < HASH_BITS_CNT; k++) {
 		hashBits = HASH_BITS[k];
 		if (!Short_KAT_OK(blkSize,hashBits))
 			continue;
@@ -306,9 +119,9 @@ void Skein_GenKAT_Tree(uint_t blkSize) {
 			continue;
 		for (p=0;p <TREE_PARM_CNT;p++) {
 			if (p && (verbose & V_KAT_SHORT))
-				continue;           /* keep short KATs short */
+				continue; /* keep short KATs short */
 			if (p && hashBits != blkSize)
-				continue;           /* we only need one "non-full" size */
+				continue; /* we only need one "non-full" size */
 
 			leaf      = TREE_PARMS[p].leaf;
 			node      = TREE_PARMS[p].node;
@@ -317,7 +130,7 @@ void Skein_GenKAT_Tree(uint_t blkSize) {
 			leafBytes = (blkSize/8) << leaf;    /* number of bytes in a "full" leaf */
 
 			/* different numbers of leaf results */
-			for (j=0;j<4;j++) {
+			for (j = 0; j < 4; j++) {
 				if ((verbose & V_KAT_SHORT) && (j != 3) && (j != 0))
 					continue;
 				if (j && (hashBits != blkSize))
@@ -337,6 +150,7 @@ void Skein_GenKAT_Tree(uint_t blkSize) {
 					n = (1 << (node * (levels-1)));
 					break;
 				}
+
 				byteCnt = n*leafBytes;
 				assert(byteCnt > 0);
 				if (byteCnt > MAX_TREE_MSG_LEN)
@@ -352,13 +166,15 @@ void Skein_GenKAT_Tree(uint_t blkSize) {
 				else
 					ShowBytes(msgBytes,msg);
 
-				Skein_TreeHash(blkSize,hashBits,msg,msgBytes,leaf,node,maxLevel,hashVal);
+				// TODO how to do this?
+				SkeinTreeHash_CPU(blkSize,hashBits,msg,msgBytes,leaf,node,maxLevel,hashVal);
 
 				printf("Result:\n");
 				ShowBytes((hashBits+7)/8,hashVal);
 				printf("--------------------------------\n");
 
 			}
+
 		}
 	}
 
@@ -377,7 +193,7 @@ void GiveHelp(void) {
 } // GiveHelp
 
 /* Main function */
-int main(int argc,char *argv[]) {
+int main(int argc, char *argv[]) {
 
 	int    i;
 	uint_t doKAT   =    0;   /* generate KAT vectors?    */
@@ -386,6 +202,7 @@ int main(int argc,char *argv[]) {
 	uint_t hashLen =    0;   /* hash length      in bits (0 --> all) */
 	uint_t seed0   = (uint_t) time(NULL); /* randomize based on time */
 	uint_t oneBlk  =    0;   /* test block size */
+	skein_DebugFlag = 0;
 
 	 /* process command-line switches */
 	for (i=1;i<argc;i++) {
@@ -433,4 +250,5 @@ int main(int argc,char *argv[]) {
 	} 
 
 	return 0;
-}
+
+} // main
