@@ -30,9 +30,7 @@ typedef struct
     union
         {
         Skein_Ctxt_Hdr_t h;                 /* common header "overlay" */
-        Skein_256_Ctxt_t ctx_256;
         Skein_512_Ctxt_t ctx_512;
-        Skein1024_Ctxt_t ctx1024;
         } u;
     }
     hashState;
@@ -55,10 +53,6 @@ HashReturn Hash  (int hashbitlen,   const BitSequence *data,
 ** Skein block size, so it must be done implicitly in the Init() function.
 ** The selection is controlled by these constants.
 */
-#ifndef SKEIN_256_NIST_MAX_HASHBITS
-#define SKEIN_256_NIST_MAX_HASHBITS (0)
-#endif
-
 #ifndef SKEIN_512_NIST_MAX_HASHBITS
 #define SKEIN_512_NIST_MAX_HASHBITS (512)
 #endif

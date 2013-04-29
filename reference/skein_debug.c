@@ -57,19 +57,9 @@ static void Show08(size_t cnt,const u08b_t *b)
 static const char *AlgoHeader(uint_t bits)
     {
     if (skein_DebugFlag & SKEIN_DEBUG_THREEFISH)
-        switch (bits)
-            {
-            case  256:  return ":Threefish-256: ";
-            case  512:  return ":Threefish-512: ";
-            case 1024:  return ":Threefish-1024:";
-            }
+		return ":Threefish-512: ";
     else
-        switch (bits)
-            {
-            case  256:  return ":Skein-256: ";
-            case  512:  return ":Skein-512: ";
-            case 1024:  return ":Skein-1024:";
-            }
+		return ":Skein-512: ";
     return NULL;
     }
 
@@ -124,16 +114,10 @@ void Skein_Show_Round(uint_t bits,const Skein_Ctxt_Hdr_t *h,size_t r,const u64b_
             uint_t j;
             u64b_t p[SKEIN_MAX_STATE_WORDS];
             const u08b_t *perm;
-            const static u08b_t PERM_256 [4][ 4] = { { 0,1,2,3 }, { 0,3,2,1 }, { 0,1,2,3 }, { 0,3,2,1 } };
             const static u08b_t PERM_512 [4][ 8] = { { 0,1,2,3,4,5,6,7 },
                                                      { 2,1,4,7,6,5,0,3 },
                                                      { 4,1,6,3,0,5,2,7 },
                                                      { 6,1,0,7,2,5,4,3 }
-                                                   };
-            const static u08b_t PERM_1024[4][16] = { { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15 },
-                                                     { 0, 9, 2,13, 6,11, 4,15,10, 7,12, 3,14, 5, 8, 1 },
-                                                     { 0, 7, 2, 5, 4, 3, 6, 1,12,15,14,13, 8,11,10, 9 },
-                                                     { 0,15, 2,11, 6,13, 4, 9,14, 1, 8, 5,10, 3,12, 7 }
                                                    };
                     
             if ((skein_DebugFlag & SKEIN_DEBUG_PERMUTE) && (r & 3))
@@ -141,9 +125,7 @@ void Skein_Show_Round(uint_t bits,const Skein_Ctxt_Hdr_t *h,size_t r,const u64b_
                 printf("\n%s [state after round %2d (permuted)]=\n",AlgoHeader(bits),(int)r);
                 switch (bits)
                     {
-                    case  256: perm = PERM_256 [r&3];   break;
                     case  512: perm = PERM_512 [r&3];   break;
-                    default:   perm = PERM_1024[r&3];   break;
                     }
                 for (j=0;j<bits/64;j++)
                     p[j] = X[perm[j]];
