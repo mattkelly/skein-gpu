@@ -18,12 +18,11 @@
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 /* select the context size and init the context */
-HashReturn Init(hashState *state, int hashbitlen)
-    {
+HashReturn Init(hashState *state, int hashbitlen) {
     //if (hashbitlen <= SKEIN_512_NIST_MAX_HASHBITS)
-    //    {
+    //    { 
         state->statebits = 64*SKEIN_512_STATE_WORDS;
-        return Skein_512_Init(&state->u.ctx_512,(size_t) hashbitlen);
+        return (HashReturn) Skein_512_Init(&state->u.ctx_512,(size_t) hashbitlen);
    //     }
     }
 
@@ -39,7 +38,7 @@ HashReturn Update(hashState *state, const BitSequence *data, DataLength databitl
         {
         switch ((state->statebits >> 8) & 3)
             {
-            case 2:  return Skein_512_Update(&state->u.ctx_512,data,databitlen >> 3);
+            case 2:  return (HashReturn) Skein_512_Update(&state->u.ctx_512,data,databitlen >> 3);
             default: return FAIL;
             }
         }
@@ -71,7 +70,7 @@ HashReturn Final(hashState *state, BitSequence *hashval)
     Skein_Assert(state->statebits % 256 == 0 && (state->statebits-256) < 1024,FAIL);
     switch ((state->statebits >> 8) & 3)
         {
-        case 2:  return Skein_512_Final(&state->u.ctx_512,hashval);
+        case 2:  return (HashReturn) Skein_512_Final(&state->u.ctx_512,hashval);
         default: return FAIL;
         }
     }

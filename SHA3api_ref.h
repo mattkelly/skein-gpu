@@ -13,27 +13,22 @@
 
 #include "skein.h"
 
-typedef enum
-    {
+typedef enum {
     SUCCESS     = SKEIN_SUCCESS,
     FAIL        = SKEIN_FAIL,
     BAD_HASHLEN = SKEIN_BAD_HASHLEN
-    }
-    HashReturn;
+} HashReturn;
 
 typedef size_t   DataLength;                /* bit count  type */
 typedef u08b_t   BitSequence;               /* bit stream type */
 
-typedef struct
-    {
+typedef struct {
     uint_t  statebits;                      /* 256, 512, or 1024 */
-    union
-        {
+    union {
         Skein_Ctxt_Hdr_t h;                 /* common header "overlay" */
         Skein_512_Ctxt_t ctx_512;
-        } u;
-    }
-    hashState;
+    } u;
+} hashState;
 
 /* "incremental" hashing API */
 HashReturn Init  (hashState *state, int hashbitlen);

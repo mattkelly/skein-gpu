@@ -18,6 +18,10 @@
 
 #include "SkeinTest.h"
 
+#ifndef SKEIN_DEBUG
+	uint_t skein_DebugFlag; /* dummy flags (if not defined elsewhere) */
+#endif
+
 static uint_t _quiet_ = 0;  /* quiet processing? */
 static uint_t verbose = 0;  /* verbose flag bits */
 
@@ -37,8 +41,8 @@ void ShowBytes(uint_t cnt,const u08b_t *b) {
 	for (i=0;i < cnt;i++) {
 		if (i % 16 ==  0) printf("    ");
 		else if (i % 4 == 0) printf(" ");
-		printf(" %02X",b[i]);
-		if (i %16 == 15 || i==cnt-1) printf("\n");
+		printf(" %02X", b[i]);
+		if (i % 16 == 15 || i == cnt-1) printf("\n");
 	}
 }
 
@@ -57,17 +61,17 @@ int Skein_Update(hashState *state, const BitSequence *data, DataLength databitle
 	Skein_Assert((state->u.h.T[1] & SKEIN_T1_FLAG_BIT_PAD) == 0 || databitlen == 0, FAIL);
 
 	if ((databitlen & 7) == 0) {
-		return Skein_512_Update(&state->u.ctx_512,data,databitlen >> 3);
+		return Skein_512_Update(&state->u.ctx_512, data, databitlen >> 3);
 	}
 	else {
 		size_t bCnt = (databitlen >> 3) + 1;                  /* number of bytes to handle */
-		u08b_t mask,*p;
+		u08b_t mask, *p;
 
 #if (!defined(_MSC_VER)) || (MSC_VER >= 1200)                 /* MSC v4.2 gives (invalid) warning here!!  */
 		/* sanity checks: allow u.h --> all contexts */
 		Skein_assert(&state->u.h == &state->u.ctx_512.h);
 #endif
-		Skein_512_Update(&state->u.ctx_512,data,bCnt);
+		Skein_512_Update(&state->u.ctx_512, data,bCnt);
 		p    = state->u.ctx_512.b;
 
 		Skein_Set_Bit_Pad_Flag(state->u.h);                     /* set tweak flag for the final call */
@@ -105,7 +109,7 @@ void Skein_GenKAT_Tree(uint_t blkSize) {
 	uint_t hashBits, node, leaf, leafBytes, msgBytes, byteCnt, levels, maxLevel;
 
 	assert(blkSize == 256 || blkSize == 512 || blkSize == 1024);
-	for (i=0;i<MAX_TREE_MSG_LEN;i+=2) {   
+	for (i = 0; i < MAX_TREE_MSG_LEN; i += 2) {   
 		/* generate "incrementing" tree hash input msg data */
 		msg[i  ] = (u08b_t) ((i ^ blkSize) ^ (i >> 16));
 		msg[i+1] = (u08b_t) ((i ^ blkSize) >> 8);
@@ -113,11 +117,11 @@ void Skein_GenKAT_Tree(uint_t blkSize) {
 
 	for (k=q=n=0; k < HASH_BITS_CNT; k++) {
 		hashBits = HASH_BITS[k];
-		if (!Short_KAT_OK(blkSize,hashBits))
+		if (!Short_KAT_OK(blkSize, hashBits))
 			continue;
 		if ((verbose & V_KAT_SHORT) && (hashBits != blkSize))
 			continue;
-		for (p=0;p <TREE_PARM_CNT;p++) {
+		for (p = 0; p <TREE_PARM_CNT; p++) {
 			if (p && (verbose & V_KAT_SHORT))
 				continue; /* keep short KATs short */
 			if (p && hashBits != blkSize)
@@ -158,18 +162,24 @@ void Skein_GenKAT_Tree(uint_t blkSize) {
 				q = (q+1) % leafBytes;
 				msgBytes = byteCnt - q;
 
-				printf("\n:Skein-512: %4d-bit hash, msgLen =%6d bits",hashBits,msgBytes*8);
-				printf(". Tree: leaf=%02X, node=%02X, maxLevels=%02X\n",leaf,node,maxLevel);
+				printf("\n:Skein-512: %4d-bit hash, msgLen =%6d bits", hashBits, msgBytes*8);
+				printf(". Tree: leaf=%02X, node=%02X, maxLevels=%02X\n", leaf,node, maxLevel);
 				printf("\nMessage data:\n");
 				if (msgBytes == 0)
 					printf("    (none)\n");
 				else
-					ShowBytes(msgBytes,msg);
+					ShowBytes(msgBytes, msg);
 
 				// TODO how to do this?
-				SkeinTreeHash_CPU(blkSize,hashBits,msg,msgBytes,leaf,node,maxLevel,hashVal);
+				SkeinTreeHash_CPU(blkSize, hashBits, msg, msgBytes, leaf, node, maxLevel, hashVal, skein_DebugFlag);
 
-				printf("Result:\n");
+				printf("CPU Result:\n");
+				ShowBytes((hashBits+7)/8,hashVal);
+				printf("--------------------------------\n");
+
+				SkeinTreeHash_GPU(blkSize, hashBits, msg, msgBytes, leaf, node, maxLevel, hashVal, skein_DebugFlag);
+
+				printf("GPU Result:\n");
 				ShowBytes((hashBits+7)/8,hashVal);
 				printf("--------------------------------\n");
 
@@ -195,7 +205,7 @@ void GiveHelp(void) {
 /* Main function */
 int main(int argc, char *argv[]) {
 
-	int    i;
+	int i;
 	uint_t doKAT   =    0;   /* generate KAT vectors?    */
 	uint_t blkSize =    0;   /* Skein state size in bits */
 	uint_t maxLen  = 1024;   /* max block size   in bits */
@@ -227,11 +237,12 @@ int main(int argc, char *argv[]) {
 						case 'C': skein_DebugFlag |= SKEIN_DEBUG_SHORT & ~SKEIN_DEBUG_CONFIG; break;
 						#endif
 
-				default : skein_DebugFlag |= atoi(argv[i]+2);     break;
+						default : skein_DebugFlag |= atoi(argv[i]+2); break;
 					}
 					break;
 				
-				default:  FatalError("Unsupported command-line option: %s",argv[i]);
+				default:  
+					FatalError("Unsupported command-line option: %s", argv[i]);
 					break;
 			}
 		}
@@ -245,9 +256,8 @@ int main(int argc, char *argv[]) {
 	if (blkSize == 0)
 		blkSize = 256 | 512 | 1024;
 
-	if (doKAT) {
+	if (doKAT)
 		Skein_GenKAT_Tree(blkSize);
-	} 
 
 	return 0;
 

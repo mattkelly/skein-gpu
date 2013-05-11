@@ -7,7 +7,7 @@
  * the results will be the same
  */
 void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size_t msgBytes,
-	uint_t leaf, uint_t node, uint_t maxLevel, u08b_t *hashRes) {
+	uint_t leaf, uint_t node, uint_t maxLevel, u08b_t *hashRes, uint_t skein_DebugFlag ) {
 
 	enum      { MAX_HEIGHT = 32 }; /* how deep we can go here */
 	uint_t    height;
@@ -16,7 +16,7 @@ void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size
 	size_t    n,nodeLen,srcOffs,dstOffs,bCnt;
 	u64b_t    treeInfo;
 	u08b_t    M[MAX_TREE_MSG_LEN+4];
-	hashState G,s;
+	hashState G, s;
 
 	assert(node < 256 && leaf < 256 && maxLevel < 256);
 	assert(node >  0  && leaf >  0  && maxLevel >  1 );
@@ -40,12 +40,17 @@ void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size
 	/* walk up the tree */
 	for (height=0;;height++) {
 
+		//printf( "Host: height = %d\n", height );
+
 		/* are we done (with only one block left)? */
-		if (height && (bCnt==blkBytes))
+		if (height && (bCnt==blkBytes)) {
+		//	printf( "Host: hit last block\n");
 			break;
+		}
 
 		/* is this the final allowed level? */
 		if (height+1 == maxLevel) {
+		//	printf( "Host: hit last level\n");
 			/* if so, do it as one big hash */
 			s = G;
 			Skein_Set_Tree_Level(s.u.h,height+1);
@@ -57,11 +62,13 @@ void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size
 		// lower levels of tree (not final level)
 		nodeLen = blkBytes << ((height) ? node : leaf);
 		for (srcOffs=dstOffs=0; srcOffs <= bCnt; ) {
+			//printf( "Host: nodeLen = %d, blkBytes = %d, bCnt = %d, srcOffs = %d, dstOffs = %d\n", nodeLen, blkBytes, bCnt, srcOffs, dstOffs);
 			n = bCnt - srcOffs;         /* number of bytes left at this level */
 			if (n > nodeLen)            /* limit to node size */
 				n = nodeLen;
 			s = G;
 			s.u.h.T[0] = srcOffs;       /* nonzero initial offset in tweak! */
+			//printf( "Host: state size before = %d\n", s.u.h.hashBitLen );
 			Skein_Set_Tree_Level(s.u.h,height+1);
 			Skein_Update(&s, M+srcOffs, n*8);
 			Skein_512_Final_Pad(&s.u.ctx_512, M+dstOffs);  /* finish up this node, output intermediate result to M[]*/
@@ -71,6 +78,8 @@ void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size
 				break;
 		}
 		bCnt = dstOffs;
+		//printf( "Host: state size = %d\n", s.u.h.hashBitLen );
+		//printf( "Host: updated bCnt =  %d\n", bCnt );
 
 	} // walk up tree
 

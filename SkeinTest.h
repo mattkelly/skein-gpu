@@ -9,8 +9,11 @@
 #include "skein.h"
 #include "SHA3api_ref.h"
 
-static const uint_t HASH_BITS[] =    /* list of hash hash lengths to test */
-{ 160,224,256,384,512,1024, 256+8,512+8,1024+8,2048+8 };
+/* list of hash hash lengths to test */
+static const uint_t HASH_BITS[] = { 
+	160, 224, 256, 384, 512, 1024, 
+	256+8, 512+8, 1024+8, 2048+8
+};
 
 #define HASH_BITS_CNT   (sizeof(HASH_BITS)/sizeof(HASH_BITS[0]))
 
@@ -21,10 +24,6 @@ static const uint_t HASH_BITS[] =    /* list of hash hash lengths to test */
 #define V_KAT_NO_SEQ    (1u << 3)
 #define V_KAT_NO_3FISH  (1u << 4)
 #define V_KAT_DO_3FISH  (1u << 5)
-
-#ifndef SKEIN_DEBUG
-uint_t skein_DebugFlag; /* dummy flags (if not defined elsewhere) */
-#endif
 
 #define SKEIN_DEBUG_SHORT   (SKEIN_DEBUG_HDR | SKEIN_DEBUG_STATE | SKEIN_DEBUG_TWEAK | SKEIN_DEBUG_KEY | SKEIN_DEBUG_INPUT_08 | SKEIN_DEBUG_FINAL)
 #define SKEIN_DEBUG_DEFAULT (SKEIN_DEBUG_SHORT)
@@ -60,14 +59,14 @@ uint_t Short_KAT_OK(uint_t blkSize,uint_t hashBits);
  * Runs on CPU
  */
 void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size_t msgBytes,
-	uint_t leaf, uint_t node, uint_t maxLevel, u08b_t *hashRes);
+	uint_t leaf, uint_t node, uint_t maxLevel, u08b_t *hashRes, uint_t skein_DebugFlag );
 
 /* 
  * Generate a KAT test for the given data and tree parameters.
  * Runs on GPU
  */
 int SkeinTreeHash_GPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size_t msgBytes,
-	uint_t leaf, uint_t node, uint_t maxLevel, u08b_t *hashRes );
+	uint_t leaf, uint_t node, uint_t maxLevel, u08b_t *hashRes, uint_t skein_DebugFlag );
 
 /*
  * Generate tree-mode hash KAT vectors.

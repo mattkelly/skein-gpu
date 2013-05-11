@@ -28,6 +28,7 @@ u64b_t RotL_64(u64b_t x,uint_t N)
     X[WCNT-1] += (r);                    /* avoid slide attacks */  \
     Skein_Show_Round(BLK_BITS,&ctx->h,SKEIN_RND_KEY_INJECT,X);
 
+
 void Skein_512_Process_Block(Skein_512_Ctxt_t *ctx,const u08b_t *blkPtr,size_t blkCnt,size_t byteCntAdd)
     { /* do it in C */
     enum
