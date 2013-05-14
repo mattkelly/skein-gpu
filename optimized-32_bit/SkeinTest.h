@@ -10,7 +10,7 @@
 #include "SHA3api_ref.h"
 
 // How many iterations for timing
-#define ITERATIONS 100
+#define ITERATIONS 5
 
 /* list of hash lengths to test */
 static const uint_t HASH_BITS[] = { 
@@ -31,7 +31,15 @@ static const uint_t HASH_BITS[] = {
 #define SKEIN_DEBUG_SHORT   (SKEIN_DEBUG_HDR | SKEIN_DEBUG_STATE | SKEIN_DEBUG_TWEAK | SKEIN_DEBUG_KEY | SKEIN_DEBUG_INPUT_08 | SKEIN_DEBUG_FINAL)
 #define SKEIN_DEBUG_DEFAULT (SKEIN_DEBUG_SHORT)
 
+// For KAT only
+// Changed to use heap so this should be able to go over 2 GB
 #define MAX_TREE_MSG_LEN  (1 << 16)
+
+// For custom long tree tests
+#define MY_MSG_SIZE		  (1 << 25)
+#define MY_LEAF_SIZE	  8
+#define MY_NODE_FANOUT	  8
+#define MY_MAX_HEIGHT	  0xFF
 
 /****************************
  * Debug IO helper routines

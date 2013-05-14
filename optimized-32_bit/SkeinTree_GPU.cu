@@ -289,7 +289,7 @@ __global__ void SkeinTree_UBI_Kernel( u08b_t *Md, hashState *sd, uint_t height, 
 	 
 	//int tx = threadIdx.x; // Thread index
 	//int bx = blockIdx.x;  // Block index
-	int threadID = threadIdx.x * TILE_SIZE + blockIdx.x; // Global thread ID
+	int threadID = blockIdx.x * TILE_SIZE + threadIdx.x; // Global thread ID
 
 	uint_t nodeLen = blkBytes << ((height) ? node : leaf);
 	uint_t srcOffs = nodeLen * threadID;
@@ -300,14 +300,16 @@ __global__ void SkeinTree_UBI_Kernel( u08b_t *Md, hashState *sd, uint_t height, 
 		Skein_512_InitExt_GPU(&sd[threadID].u.ctx_512, (size_t)hashBits, treeInfo, NULL, 0);
 
 		uint_t n = bCnt - srcOffs;         /* number of bytes left at this level */
-		if (n > nodeLen)            /* limit to node size */
+		/* limit to node size */
+		if (n > nodeLen)
 			n = nodeLen;
 		sd[threadID].u.h.T[0] = srcOffs;       /* nonzero initial offset in tweak! */
 		Skein_Set_Tree_Level(sd[threadID].u.h, height+1);
 
 		Skein_Update_GPU(&sd[threadID], Md + srcOffs, n*8);
 
-		Skein_512_Final_Pad_GPU(&sd[threadID].u.ctx_512, Md + dstOffs);  /* finish up this node, output intermediate result to M[]*/
+		 /* finish up this node, output intermediate result to M[]*/
+		Skein_512_Final_Pad_GPU(&sd[threadID].u.ctx_512, Md + dstOffs);
 	}
 
 } // SkeinTree_UBI_Kernel
@@ -331,25 +333,20 @@ int SkeinTreeHash_GPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size_
 
 	//cudaMallocHost( (void**) &M, (MAX_TREE_MSG_LEN+4) * sizeof(u08b_t) );
 	// Use pinned memory for speed
-	cudaMallocHost( (void**) &M, msgBytes );
+	//printf( "before CUDA malloc host\n");
+	cudaMallocHost( (void**) &M, msgBytes + 4 );
+	//printf( "after CUDA malloc host\n");
 
 	// CUDA
 	cudaError_t error;
 	u08b_t *Md;
-
-	// Various checks
-	//assert(node < 256 && leaf < 256 && maxLevel < 256);
-	//assert(node >  0  && leaf >  0  && maxLevel >  1 );
-	//assert(blkSize == 256 || blkSize == 512 || blkSize == 1024);
-	//assert(blkBytes <= sizeof(M));
-	//assert(msgBytes <= sizeof(M));
 
 	/* precompute the config block result G for multiple uses below */
 #ifdef SKEIN_DEBUG
 	if (skein_DebugFlag)
 		skein_DebugFlag |= SKEIN_DEBUG_CONFIG;
 #endif
-	treeInfo = SKEIN_CFG_TREE_INFO(leaf,node,maxLevel);
+	treeInfo = SKEIN_CFG_TREE_INFO(leaf, node, maxLevel);
 	if (Skein_512_InitExt(&G.u.ctx_512, (size_t)hashBits, treeInfo, NULL, 0) != SKEIN_SUCCESS )
 		FatalError("Skein_512_InitExt() fails in GPU tree");
 	skein_DebugFlag = saveDebug;
@@ -359,9 +356,12 @@ int SkeinTreeHash_GPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size_
 
 	// Allocate memory on device for message
 	//cudaMalloc( (void**) &Md, (MAX_TREE_MSG_LEN+4) * sizeof(u08b_t) );
-	cudaMalloc( (void**) &Md, msgBytes );
+	//printf( "before CUDA malloc\n");
+	cudaMalloc( (void**) &Md, msgBytes + 4 );
+	//printf( "after CUDA malloc\n");
 	//cudaMemcpy( Md, M, (MAX_TREE_MSG_LEN+4) * sizeof(u08b_t), cudaMemcpyHostToDevice );
-	cudaMemcpy( Md, M, msgBytes, cudaMemcpyHostToDevice );
+	cudaMemcpy( Md, M, msgBytes + 4, cudaMemcpyHostToDevice );
+	//printf( "after CUDA memcpy\n");
 
 	// Walk up the tree
 	for (height = 0; ; height++) {
@@ -397,8 +397,8 @@ int SkeinTreeHash_GPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size_
 
 		// Organize stuff for GPU
 		dim3 dimBlock(TILE_SIZE, 1);
-		//dim3 dimGrid((int)ceil(((float)(msgBytes) / (float)blkBytes) / (float)TILE_SIZE), 1);
-		dim3 dimGrid((int)ceil((float)10000 / (float)TILE_SIZE), 1);
+		dim3 dimGrid((int)ceil((float)numNodes / (float)TILE_SIZE), 1);
+		//dim3 dimGrid((int)ceil((float)(msgBytes) / (float)blkBytes), 1);
 		//printf( "dimGrid = (%d, %d, %d)\n", dimGrid.x, dimGrid.y, dimGrid.z );
 
 		SkeinTree_UBI_Kernel<<< dimGrid, dimBlock >>>( Md, sd, height, node, leaf, bCnt, blkBytes, (size_t)hashBits, treeInfo );
@@ -416,11 +416,10 @@ int SkeinTreeHash_GPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size_
 	}
 
 	// Output UBI
-	//printf( "GPU: before output UBI\n" );
 	Skein_512_Output(&s.u.ctx_512, hashRes);
-	//printf( "GPU: after output UBI\n" );
 
-	//cudaFree(Md);
+	// Cleanup
+	cudaFreeHost(M);
 
 	// Make sure everything worked okay; if not, indicate that error occurred
 	error = cudaGetLastError();

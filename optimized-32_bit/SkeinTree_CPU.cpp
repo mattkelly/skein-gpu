@@ -9,20 +9,23 @@
 void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size_t msgBytes,
 	uint_t leaf, uint_t node, uint_t maxLevel, u08b_t *hashRes, uint_t skein_DebugFlag ) {
 
-	enum      { MAX_HEIGHT = 32 }; /* how deep we can go here */
+	//enum      { MAX_HEIGHT = 32 }; /* how deep we can go here */
 	uint_t    height;
 	uint_t    blkBytes  = blkSize/8;
 	uint_t    saveDebug = skein_DebugFlag;
 	size_t    n,nodeLen,srcOffs,dstOffs,bCnt;
 	u64b_t    treeInfo;
-	u08b_t    M[MAX_TREE_MSG_LEN+4];
+	//u08b_t    M[MSG_SIZE+4];
+	u08b_t *M;
 	hashState G, s;
 
-	assert(node < 256 && leaf < 256 && maxLevel < 256);
-	assert(node >  0  && leaf >  0  && maxLevel >  1 );
-	assert(blkSize == 256 || blkSize == 512 || blkSize == 1024);
-	assert(blkBytes <= sizeof(M));
-	assert(msgBytes <= sizeof(M));
+	M = (u08b_t*) malloc( msgBytes + 4 );
+
+	//assert(node < 256 && leaf < 256 && maxLevel < 256);
+	//assert(node >  0  && leaf >  0  && maxLevel >  1 );
+	//assert(blkSize == 256 || blkSize == 512 || blkSize == 1024);
+	//assert(blkBytes <= sizeof(M));
+	//assert(msgBytes <= sizeof(M));
 
 	/* precompute the config block result G for multiple uses below */
 #ifdef SKEIN_DEBUG
@@ -31,11 +34,11 @@ void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size
 #endif
 	treeInfo = SKEIN_CFG_TREE_INFO(leaf,node,maxLevel);
 	if (Skein_512_InitExt(&G.u.ctx_512,(size_t) hashBits,treeInfo,NULL,0) != SKEIN_SUCCESS )
-		FatalError("Skein_512_InitExt() fails in tree");
+		FatalError("Skein_512_InitExt() fails in host tree");
 	skein_DebugFlag = saveDebug;
 
 	bCnt = msgBytes;
-	memcpy(M,msg,bCnt);
+	memcpy(M, msg, bCnt);
 
 	/* walk up the tree */
 	for (height=0;;height++) {
@@ -46,7 +49,7 @@ void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size
 		if (height && (bCnt==blkBytes)) {
 		//	printf( "Host: hit last block\n");
 			break;
-		}
+		} 
 
 		/* is this the final allowed level? */
 		if (height+1 == maxLevel) {
@@ -83,5 +86,8 @@ void SkeinTreeHash_CPU( uint_t blkSize, uint_t hashBits, const u08b_t *msg, size
 
 	/* output the result */
 	Skein_512_Output(&s.u.ctx_512, hashRes);
+
+	// Cleanup
+	free(M);
 
 } // Skein_TreeHash
